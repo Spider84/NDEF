@@ -1,12 +1,15 @@
 #include <NdefMessage.h>
 
-NdefMessage::NdefMessage(void)
+NdefMessage::NdefMessage(void):
+_recordCount(0)
 {
-    _recordCount = 0;
+    //Serial.println(F("NdefMessage Constructor 1"));
 }
 
 NdefMessage::NdefMessage(const byte * data, const int numBytes)
 {
+    //Serial.println(F("NdefMessage Constructor 2"));
+    
     #ifdef NDEF_DEBUG
     Serial.print(F("Decoding "));Serial.print(numBytes);Serial.println(F(" bytes"));
     PrintHexChar(data, numBytes);
@@ -81,36 +84,62 @@ NdefMessage::NdefMessage(const byte * data, const int numBytes)
 
 NdefMessage::NdefMessage(const NdefMessage& rhs)
 {
+    // Serial.println(F("NdefMessage Constructor (copy)"));
 
-    _recordCount = rhs._recordCount;
-    for (unsigned int i = 0; i < _recordCount; i++)
-    {
-        _records[i] = rhs._records[i];
-    }
-
-}
-
-NdefMessage::~NdefMessage()
-{
-}
-
-NdefMessage& NdefMessage::operator=(const NdefMessage& rhs)
-{
-
-    if (this != &rhs)
-    {
-
-        // delete existing records
+    if (this != &rhs) {
+        _recordCount = rhs._recordCount;
         for (unsigned int i = 0; i < _recordCount; i++)
-        {
-            // TODO Dave: is this the right way to delete existing records?
-            _records[i] = NdefRecord();
+        {       
+            if (_records[i]) {
+                _records[i] = new NdefRecord(*rhs._records[i]);
+            }
         }
+    }
+}
 
+NdefMessage::NdefMessage(NdefMessage&& rhs)
+{
+    //Serial.println(F("NdefMessage Constructor (move)"));
+
+    if (this != &rhs) {
         _recordCount = rhs._recordCount;
         for (unsigned int i = 0; i < _recordCount; i++)
         {
             _records[i] = rhs._records[i];
+            rhs._records[i] = NULL;
+        }
+        rhs._recordCount = 0;
+    }
+}
+
+NdefMessage::~NdefMessage()
+{
+    // Serial.println(F("NdefMessage Destructor"));
+
+    for (unsigned int i = 0; i < _recordCount; i++)
+    {
+        delete _records[i];
+    }
+}
+
+NdefMessage& NdefMessage::operator=(const NdefMessage& rhs)
+{
+    // Serial.println("NdefMessage ASSIGN");
+
+    if (this != &rhs)
+    {
+        _recordCount = rhs._recordCount;
+        for (unsigned int i = 0; i < _recordCount; i++)
+        {
+            _records[i] = new NdefRecord(*rhs._records[i]);
+        }
+        
+        // delete existing records
+        for (unsigned int i = _recordCount; i < MAX_NDEF_RECORDS; i++)
+        {
+            // TODO Dave: is this the right way to delete existing records?
+            delete _records[i];
+            _records[i] = NULL;
         }
     }
     return *this;
@@ -126,7 +155,7 @@ int NdefMessage::getEncodedSize()
     int size = 0;
     for (unsigned int i = 0; i < _recordCount; i++)
     {
-        size += _records[i].getEncodedSize();
+        size += _records[i]->getEncodedSize();
     }
     return size;
 }
@@ -139,19 +168,19 @@ void NdefMessage::encode(uint8_t* data)
 
     for (unsigned int i = 0; i < _recordCount; i++)
     {
-        _records[i].encode(data_ptr, i == 0, (i + 1) == _recordCount);
+        _records[i]->encode(data_ptr, i == 0, (i + 1) == _recordCount);
         // TODO can NdefRecord.encode return the record size?
-        data_ptr += _records[i].getEncodedSize();
+        data_ptr += _records[i]->getEncodedSize();
     }
 
 }
 
-boolean NdefMessage::addRecord(NdefRecord& record)
+boolean NdefMessage::addRecord(NdefRecord record)
 {
 
     if (_recordCount < MAX_NDEF_RECORDS)
     {
-        _records[_recordCount] = record;
+        _records[_recordCount] = new NdefRecord(record);
         _recordCount++;
         return true;
     }
@@ -175,16 +204,9 @@ void NdefMessage::addMimeMediaRecord(String mimeType, String payload)
 
 void NdefMessage::addMimeMediaRecord(String mimeType, uint8_t* payload, int payloadLength)
 {
-    NdefRecord r = NdefRecord();
-    r.setTnf(TNF_MIME_MEDIA);
-
     byte type[mimeType.length() + 1];
     mimeType.getBytes(type, sizeof(type));
-    r.setType(type, mimeType.length());
-
-    r.setPayload(payload, payloadLength);
-
-    addRecord(r);
+    addRecord(NdefRecord(TNF_MIME_MEDIA, type, mimeType.length(), payload, payloadLength));
 }
 
 void NdefMessage::addTextRecord(String text)
@@ -194,12 +216,7 @@ void NdefMessage::addTextRecord(String text)
 
 void NdefMessage::addTextRecord(String text, String encoding)
 {
-    NdefRecord r = NdefRecord();
-    r.setTnf(TNF_WELL_KNOWN);
-
     uint8_t RTD_TEXT[1] = { 0x54 }; // TODO this should be a constant or preprocessor
-    r.setType(RTD_TEXT, sizeof(RTD_TEXT));
-
     // X is a placeholder for encoding length
     // TODO is it more efficient to build w/o string concatenation?
     String payloadString = "X" + encoding + text;
@@ -210,18 +227,12 @@ void NdefMessage::addTextRecord(String text, String encoding)
     // replace X with the real encoding length
     payload[0] = encoding.length();
 
-    r.setPayload(payload, payloadString.length());
-
-    addRecord(r);
+    addRecord(NdefRecord(TNF_WELL_KNOWN, RTD_TEXT, sizeof(RTD_TEXT), payload, payloadString.length()));
 }
 
 void NdefMessage::addUriRecord(String uri)
 {
-    NdefRecord* r = new NdefRecord();
-    r->setTnf(TNF_WELL_KNOWN);
-
     uint8_t RTD_URI[1] = { 0x55 }; // TODO this should be a constant or preprocessor
-    r->setType(RTD_URI, sizeof(RTD_URI));
 
     // X is a placeholder for identifier code
     String payloadString = "X" + uri;
@@ -232,25 +243,19 @@ void NdefMessage::addUriRecord(String uri)
     // add identifier code 0x0, meaning no prefix substitution
     payload[0] = 0x0;
 
-    r->setPayload(payload, payloadString.length());
-
-    addRecord(*r);
-    delete(r);
+    addRecord(NdefRecord(TNF_WELL_KNOWN, RTD_URI, sizeof(RTD_URI), payload, payloadString.length()));
 }
 
 void NdefMessage::addEmptyRecord()
 {
-    NdefRecord* r = new NdefRecord();
-    r->setTnf(TNF_EMPTY);
-    addRecord(*r);
-    delete(r);
+    addRecord(NdefRecord(TNF_EMPTY));
 }
 
 NdefRecord NdefMessage::getRecord(int index)
 {
-    if (index > -1 && index < static_cast<int>(_recordCount))
+    if (index >= 0 && index < _recordCount)
     {
-        return _records[index];
+        return *_records[index];
     }
     else
     {
@@ -272,7 +277,7 @@ void NdefMessage::print()
 
     for (unsigned int i = 0; i < _recordCount; i++)
     {
-         _records[i].print();
+         _records[i]->print();
     }
 }
 #endif

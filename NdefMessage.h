@@ -12,13 +12,14 @@ class NdefMessage
         NdefMessage(void);
         NdefMessage(const byte *data, const int numBytes);
         NdefMessage(const NdefMessage& rhs);
+        NdefMessage(NdefMessage&& rhs);
         ~NdefMessage();
         NdefMessage& operator=(const NdefMessage& rhs);
 
         int getEncodedSize(); // need so we can pass array to encode
         void encode(byte *data);
 
-        boolean addRecord(NdefRecord& record);
+        boolean addRecord(NdefRecord record);
         void addMimeMediaRecord(String mimeType, String payload);
         void addMimeMediaRecord(String mimeType, byte *payload, int payloadLength);
         void addTextRecord(String text);
@@ -34,7 +35,7 @@ class NdefMessage
         void print();
 #endif
     private:
-        NdefRecord _records[MAX_NDEF_RECORDS];
+        NdefRecord *_records[MAX_NDEF_RECORDS];
         unsigned int _recordCount;
 };
 

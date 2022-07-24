@@ -9,6 +9,8 @@ class NfcTag
 {
     public:
         NfcTag();
+        NfcTag(const NfcTag& rhs);
+        NfcTag(NfcTag&& rhs);
         NfcTag(byte *uid, unsigned int uidLength);
         NfcTag(byte *uid, unsigned int uidLength, String tagType);
         NfcTag(byte *uid, unsigned int uidLength, String tagType, NdefMessage& ndefMessage);

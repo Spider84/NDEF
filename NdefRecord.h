@@ -17,8 +17,9 @@
 class NdefRecord
 {
     public:
-        NdefRecord();
+        NdefRecord(byte tnf=0, const byte *type=NULL, size_t typeLength=0, const byte *payload=NULL, size_t payloadLength=0, const byte *id=NULL, size_t idLength=0);
         NdefRecord(const NdefRecord& rhs);
+        NdefRecord(NdefRecord&& rhs);
         ~NdefRecord();
         NdefRecord& operator=(const NdefRecord& rhs);
 
